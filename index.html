@@ -1,0 +1,1309 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>采样定理交互式仿真工具 - 完整周期频谱</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
+    <style>
+        .canvas-container {
+            position: relative;
+            height: 240px;
+            width: 100%;
+            overflow: hidden;
+        }
+        .signal-canvas {
+            width: 100%;
+            height: 100%;
+            border: 1px solid #ddd;
+            background: #f9f9f9;
+            display: block;
+        }
+        .control-slider {
+            -webkit-appearance: none;
+            height: 6px;
+            border-radius: 3px;
+            background: #ddd;
+            outline: none;
+        }
+        .control-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+        .control-slider::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+        }
+        .fade-in {
+            animation: fadeIn 0.5s ease-in-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        .pulse {
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+        .parameter-display {
+            font-family: 'Courier New', monospace;
+            font-weight: bold;
+        }
+        .error-message {
+            color: #dc2626;
+            padding: 10px;
+            background: #fee2e2;
+            border-radius: 4px;
+            margin: 10px 0;
+            display: none;
+        }
+        .spectrum-legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 8px;
+            font-size: 11px;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+        }
+        .legend-color {
+            width: 8px;
+            height: 8px;
+            margin-right: 4px;
+            border-radius: 2px;
+        }
+        .theorem-highlight {
+            background: #fef3c7;
+            padding: 10px;
+            border-radius: 6px;
+            border-left: 4px solid #f59e0b;
+            margin: 10px 0;
+        }
+        .harmonic-info {
+            background: #dbeafe;
+            padding: 8px;
+            border-radius: 4px;
+            margin-top: 5px;
+            font-size: 11px;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <div class="container mx-auto px-4 py-8 max-w-6xl">
+        <!-- 错误提示区域 -->
+        <div id="error-container" class="error-message"></div>
+        
+        <!-- 标题区域 -->
+        <header class="text-center mb-8 fade-in">
+            <h1 class="text-3xl md:text-4xl font-bold text-gray-800 mb-3">
+                <i class="fa fa-waves text-blue-600 mr-2"></i>采样定理交互式仿真工具
+            </h1>
+            <p class="text-gray-600 max-w-3xl mx-auto">
+                直观演示奈奎斯特-香农采样定理：显示完整周期频谱，明确展示"采样信号频谱是原始信号频谱的周期延拓"
+            </p>
+        </header>
+
+        <!-- 控制面板 -->
+        <div class="bg-white rounded-xl shadow-lg p-6 mb-8 fade-in" style="animation-delay: 0.1s">
+            <h2 class="text-xl font-semibold text-gray-800 mb-4 flex items-center">
+                <i class="fa fa-sliders text-purple-500 mr-2"></i>信号参数控制
+            </h2>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                <!-- 信号类型选择 -->
+                <div>
+                    <label class="block text-gray-700 font-medium mb-2">信号类型</label>
+                    <div class="grid grid-cols-3 gap-2">
+                        <button id="sine-btn" class="px-3 py-2 bg-blue-600 text-white rounded-md text-sm font-medium transition-all hover:bg-blue-700 active">
+                            正弦波
+                        </button>
+                        <button id="square-btn" class="px-3 py-2 bg-gray-200 text-gray-700 rounded-md text-sm font-medium transition-all hover:bg-gray-300">
+                            方波
+                        </button>
+                        <button id="triangle-btn" class="px-3 py-2 bg-gray-200 text-gray-700 rounded-md text-sm font-medium transition-all hover:bg-gray-300">
+                            三角波
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- 信号频率控制 -->
+                <div>
+                    <label class="block text-gray-700 font-medium mb-2">
+                        基波频率: <span id="signal-freq-val" class="parameter-display">5</span> Hz
+                    </label>
+                    <input type="range" id="signal-freq" min="1" max="15" step="0.5" value="5" 
+                           class="control-slider w-full" style="background: #93c5fd;">
+                    <div class="flex justify-between text-xs text-gray-500 mt-1">
+                        <span>低频</span>
+                        <span>高频</span>
+                    </div>
+                </div>
+                
+                <!-- 采样频率控制 -->
+                <div>
+                    <label class="block text-gray-700 font-medium mb-2">
+                        采样频率: <span id="sample-freq-val" class="parameter-display">15</span> Hz
+                    </label>
+                    <input type="range" id="sample-freq" min="3" max="60" step="0.5" value="15" 
+                           class="control-slider w-full" style="background: #fca5a5;">
+                    <div class="flex justify-between text-xs text-gray-500 mt-1">
+                        <span>低采样率</span>
+                        <span>高采样率</span>
+                    </div>
+                </div>
+                
+                <!-- 动画控制 -->
+                <div>
+                    <label class="block text-gray-700 font-medium mb-2">动画控制</label>
+                    <div class="flex gap-2">
+                        <button id="play-btn" class="flex-1 px-3 py-2 bg-green-600 text-white rounded-md text-sm font-medium transition-all hover:bg-green-700">
+                            <i class="fa fa-play mr-1"></i>播放
+                        </button>
+                        <button id="pause-btn" class="flex-1 px-3 py-2 bg-amber-600 text-white rounded-md text-sm font-medium transition-all hover:bg-amber-700">
+                            <i class="fa fa-pause mr-1"></i>暂停
+                        </button>
+                        <button id="reset-btn" class="flex-1 px-3 py-2 bg-gray-600 text-white rounded-md text-sm font-medium transition-all hover:bg-gray-700">
+                            <i class="fa fa-refresh mr-1"></i>重置
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 采样状态指示 -->
+            <div class="mt-4 p-3 rounded-lg bg-blue-50 border border-blue-100 flex items-center">
+                <div id="status-indicator" class="w-3 h-3 rounded-full bg-green-500 mr-2 pulse"></div>
+                <span id="status-text" class="text-sm text-gray-700">
+                    <span class="parameter-display" id="freq-ratio">3.0×</span> - 满足奈奎斯特条件 (采样频率 > 2×信号最高频率)
+                </span>
+            </div>
+            
+            <!-- 谐波信息 -->
+            <div id="harmonic-info" class="harmonic-info mt-3">
+                <div id="sine-harmonics" class="harmonic-detail">
+                    正弦波: 仅包含基波频率 <span class="parameter-display">5</span> Hz
+                </div>
+                <div id="square-harmonics" class="harmonic-detail" style="display: none;">
+                    方波: 包含基波和奇次谐波 (1,3,5,7,9次) - 最高频率: <span class="parameter-display">45</span> Hz
+                </div>
+                <div id="triangle-harmonics" class="harmonic-detail" style="display: none;">
+                    三角波: 包含基波和奇次谐波 (1,3,5,7次) - 最高频率: <span class="parameter-display">35</span> Hz
+                </div>
+            </div>
+        </div>
+        
+        <!-- 可视化区域 -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+            <!-- 原始信号 -->
+            <div class="bg-white rounded-xl shadow-lg p-5 fade-in" style="animation-delay: 0.2s">
+                <h3 class="text-lg font-semibold text-gray-800 mb-3 flex items-center">
+                    <i class="fa fa-signal text-green-500 mr-2"></i>原始信号波形
+                </h3>
+                <div class="canvas-container">
+                    <canvas id="original-signal" class="signal-canvas"></canvas>
+                </div>
+                <div class="mt-2 text-xs text-gray-500 flex items-center">
+                    <span class="inline-block w-3 h-1 bg-green-500 mr-1"></span>
+                    <span>原始信号 (基波频率: <span id="orig-freq-display">5</span> Hz, 最高频率: <span id="orig-max-freq-display">5</span> Hz)</span>
+                </div>
+            </div>
+            
+            <!-- 采样信号 -->
+            <div class="bg-white rounded-xl shadow-lg p-5 fade-in" style="animation-delay: 0.3s">
+                <h3 class="text-lg font-semibold text-gray-800 mb-3 flex items-center">
+                    <i class="fa fa-dot-circle-o text-red-500 mr-2"></i>采样信号
+                </h3>
+                <div class="canvas-container">
+                    <canvas id="sampled-signal" class="signal-canvas"></canvas>
+                </div>
+                <div class="mt-2 text-xs text-gray-500 flex items-center">
+                    <span class="inline-block w-3 h-1 bg-green-500 mr-1"></span>
+                    <span>原始信号</span>
+                    <span class="inline-block w-3 h-3 bg-red-500 rounded-full mr-1 ml-4"></span>
+                    <span>采样点 (采样频率: <span id="samp-freq-display">15</span> Hz)</span>
+                </div>
+            </div>
+            
+            <!-- 原始信号频谱 -->
+            <div class="bg-white rounded-xl shadow-lg p-5 fade-in" style="animation-delay: 0.4s">
+                <h3 class="text-lg font-semibold text-gray-800 mb-3 flex items-center">
+                    <i class="fa fa-area-chart text-purple-500 mr-2"></i>原始信号频谱
+                </h3>
+                <div class="canvas-container">
+                    <canvas id="original-spectrum" class="signal-canvas"></canvas>
+                </div>
+                <div class="mt-2 text-xs text-gray-500 flex items-center">
+                    <span class="inline-block w-3 h-1 bg-purple-500 mr-1"></span>
+                    <span>信号频谱 (基波频率: <span id="orig-peak-display">5</span> Hz)</span>
+                </div>
+                <div id="original-harmonic-details" class="harmonic-info">
+                    <!-- 谐波详情将在这里动态显示 -->
+                </div>
+            </div>
+            
+            <!-- 采样信号频谱 -->
+            <div class="bg-white rounded-xl shadow-lg p-5 fade-in" style="animation-delay: 0.5s">
+                <h3 class="text-lg font-semibold text-gray-800 mb-3 flex items-center">
+                    <i class="fa fa-bar-chart text-orange-500 mr-2"></i>采样信号频谱
+                </h3>
+                <div class="canvas-container">
+                    <canvas id="sampled-spectrum" class="signal-canvas"></canvas>
+                </div>
+                <div class="mt-2 text-xs text-gray-500">
+                    <div class="theorem-highlight">
+                        <strong>采样定理核心:</strong> 采样信号的频谱是原始信号频谱的周期延拓，周期为采样频率 fₛ
+                    </div>
+                    <div class="flex items-center mb-1">
+                        <span class="inline-block w-3 h-1 bg-yellow-500 mr-1"></span>
+                        <span>奈奎斯特频率: <span id="nyquist-display">7.5</span> Hz</span>
+                    </div>
+                    <div class="spectrum-legend" id="spectrum-legend">
+                        <!-- 频谱周期颜色图例将在这里动态生成 -->
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 重建信号 -->
+            <div class="bg-white rounded-xl shadow-lg p-5 lg:col-span-2 fade-in" style="animation-delay: 0.6s">
+                <h3 class="text-lg font-semibold text-gray-800 mb-3 flex items-center">
+                    <i class="fa fa-refresh text-blue-500 mr-2"></i>信号重建对比
+                </h3>
+                <div class="canvas-container" style="height: 280px;">
+                    <canvas id="reconstructed-signal" class="signal-canvas"></canvas>
+                </div>
+                <div class="mt-2 text-xs text-gray-500 flex items-center">
+                    <span class="inline-block w-3 h-1 bg-green-500 mr-1"></span>
+                    <span>原始信号</span>
+                    <span class="inline-block w-3 h-1 bg-blue-500 mr-1 ml-4"></span>
+                    <span>重建信号</span>
+                    <span class="inline-block w-3 h-3 bg-red-500 rounded-full mr-1 ml-4"></span>
+                    <span>采样点</span>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 理论说明 -->
+        <div class="bg-white rounded-xl shadow-lg p-6 fade-in" style="animation-delay: 0.7s">
+            <h2 class="text-xl font-semibold text-gray-800 mb-4 flex items-center">
+                <i class="fa fa-book text-indigo-500 mr-2"></i>采样定理理论说明
+            </h2>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 text-gray-700">
+                <div>
+                    <h3 class="font-medium text-lg mb-2 text-indigo-700">奈奎斯特-香农采样定理</h3>
+                    <p class="mb-3">采样定理指出：对于一个带宽有限的连续时间信号，如果采样频率大于信号最高频率的2倍，那么原始信号可以从采样信号中完全恢复，而不会产生失真。</p>
+                    <p class="mb-3">数学表达式：<span class="parameter-display text-xl">fₛ ≥ 2fₘ</span></p>
+                    <p>其中：<br>
+                    - fₛ 是采样频率<br>
+                    - fₘ 是信号中的最高频率分量</p>
+                </div>
+                
+                <div>
+                    <h3 class="font-medium text-lg mb-2 text-indigo-700">周期频谱特性</h3>
+                    <p class="mb-3">采样信号的频谱具有周期性，以采样频率fₛ为周期重复出现。每个周期的频谱与原始信号频谱形状相同，但中心位置不同。</p>
+                    <p>频谱周期的中心频率为：<span class="parameter-display">k·fₛ</span>，其中k为整数（...,-2,-1,0,1,2,...）</p>
+                    <p>当满足奈奎斯特条件时，各周期频谱分离；否则会发生混叠。</p>
+                </div>
+            </div>
+            
+            <div class="mt-4 p-4 bg-gray-50 rounded-lg">
+                <h4 class="font-medium text-gray-800 mb-2">关于方波和三角波信号的说明：</h4>
+                <p class="text-sm text-gray-700">
+                    方波和三角波理论上包含无限多个谐波分量，但在实际应用中，我们通常考虑有限次谐波（方波取9次谐波，三角波取7次谐波）。
+                    因此，这些信号的最高频率是有限的，当采样频率大于等于信号最高频率的2倍时，可以恢复出原始波形的主要特征。
+                </p>
+            </div>
+        </div>
+        
+        <footer class="mt-12 text-center text-gray-500 text-sm pb-6">
+            采样定理交互式仿真工具 &copy; 2023 | 显示完整周期频谱版本
+        </footer>
+    </div>
+
+    <script>
+        // 错误处理函数
+        function handleError(message) {
+            const errorContainer = document.getElementById('error-container');
+            errorContainer.textContent = '错误: ' + message;
+            errorContainer.style.display = 'block';
+            console.error(message);
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            try {
+                // 获取Canvas元素和上下文
+                const originalCanvas = document.getElementById('original-signal');
+                const sampledCanvas = document.getElementById('sampled-signal');
+                const originalSpectrumCanvas = document.getElementById('original-spectrum');
+                const sampledSpectrumCanvas = document.getElementById('sampled-spectrum');
+                const reconstructedCanvas = document.getElementById('reconstructed-signal');
+                
+                // 检查Canvas元素是否存在
+                const canvases = [
+                    originalCanvas, sampledCanvas, 
+                    originalSpectrumCanvas, sampledSpectrumCanvas, 
+                    reconstructedCanvas
+                ];
+                
+                canvases.forEach(canvas => {
+                    if (!canvas) {
+                        throw new Error(`找不到Canvas元素: ${canvas.id}`);
+                    }
+                    
+                    // 检查是否支持2D上下文
+                    const ctx = canvas.getContext('2d');
+                    if (!ctx) {
+                        throw new Error(`无法获取Canvas 2D上下文: ${canvas.id}`);
+                    }
+                });
+                
+                const ctxOrig = originalCanvas.getContext('2d');
+                const ctxSamp = sampledCanvas.getContext('2d');
+                const ctxOrigSpec = originalSpectrumCanvas.getContext('2d');
+                const ctxSampSpec = sampledSpectrumCanvas.getContext('2d');
+                const ctxRecon = reconstructedCanvas.getContext('2d');
+                
+                // 定义不同周期频谱的颜色
+                const cycleColors = [
+                    '#FF6B6B', // 周期 -3
+                    '#FFD166', // 周期 -2
+                    '#06D6A0', // 周期 -1
+                    '#118AB2', // 周期 0 (中心周期)
+                    '#9B5DE5', // 周期 1
+                    '#F15BB5', // 周期 2
+                    '#00F5D4'  // 周期 3
+                ];
+                
+                // 生成频谱周期图例
+                function generateSpectrumLegend() {
+                    const legendContainer = document.getElementById('spectrum-legend');
+                    legendContainer.innerHTML = '';
+                    
+                    // 周期索引: -3, -2, -1, 0, 1, 2, 3
+                    const cycles = [-3, -2, -1, 0, 1, 2, 3];
+                    
+                    cycles.forEach((cycle, index) => {
+                        const legendItem = document.createElement('div');
+                        legendItem.className = 'legend-item';
+                        
+                        const colorBox = document.createElement('div');
+                        colorBox.className = 'legend-color';
+                        colorBox.style.backgroundColor = cycleColors[index];
+                        
+                        const label = document.createElement('span');
+                        label.textContent = `周期 ${cycle} (中心: ${cycle}×fₛ)`;
+                        
+                        legendItem.appendChild(colorBox);
+                        legendItem.appendChild(label);
+                        legendContainer.appendChild(legendItem);
+                    });
+                }
+                
+                // 初始化频谱图例
+                generateSpectrumLegend();
+                
+                // 设置Canvas尺寸 - 增强版
+                function resizeCanvases() {
+                    try {
+                        canvases.forEach(canvas => {
+                            const container = canvas.parentElement;
+                            if (!container) {
+                                throw new Error(`Canvas容器不存在: ${canvas.id}`);
+                            }
+                            
+                            // 获取容器的计算样式
+                            const containerStyle = getComputedStyle(container);
+                            const width = parseInt(containerStyle.width);
+                            const height = parseInt(containerStyle.height);
+                            
+                            // 确保尺寸有效
+                            if (isNaN(width) || isNaN(height) || width <= 0 || height <= 0) {
+                                // 回退到默认尺寸
+                                canvas.width = 400;
+                                canvas.height = 200;
+                                console.warn(`使用默认尺寸 for ${canvas.id}: 400x200`);
+                            } else {
+                                // 设置实际尺寸，考虑设备像素比
+                                const dpr = window.devicePixelRatio || 1;
+                                canvas.width = width * dpr;
+                                canvas.height = height * dpr;
+                                
+                                // 调整绘图上下文比例
+                                const ctx = canvas.getContext('2d');
+                                ctx.scale(dpr, dpr);
+                                
+                                // 设置CSS尺寸
+                                canvas.style.width = `${width}px`;
+                                canvas.style.height = `${height}px`;
+                            }
+                        });
+                        
+                        drawAll();
+                    } catch (error) {
+                        handleError(`调整画布尺寸失败: ${error.message}`);
+                    }
+                }
+                
+                // 初始化尺寸并监听窗口大小变化
+                resizeCanvases();
+                window.addEventListener('resize', resizeCanvases);
+                // 延迟再次调整尺寸，确保布局稳定
+                setTimeout(resizeCanvases, 100);
+                
+                // 全局参数
+                let signalType = 'sine';
+                let signalFreq = 5;      // 信号基波频率(Hz)
+                let sampleFreq = 15;     // 采样频率(Hz)
+                let time = 0;            // 时间变量
+                let isPlaying = true;    // 动画状态
+                let animationId = null;  // 动画ID
+                
+                // 获取信号的最高频率（考虑谐波）
+                function getMaxFrequency() {
+                    switch(signalType) {
+                        case 'sine':
+                            return signalFreq; // 正弦波只有基波
+                        case 'square':
+                            return signalFreq * 9; // 方波取9次谐波
+                        case 'triangle':
+                            return signalFreq * 7; // 三角波取7次谐波
+                        default:
+                            return signalFreq;
+                    }
+                }
+                
+                // 获取信号的谐波信息
+                function getHarmonicInfo() {
+                    switch(signalType) {
+                        case 'sine':
+                            return {
+                                harmonics: [1],
+                                amplitudes: [1.0]
+                            };
+                        case 'square':
+                            return {
+                                harmonics: [1, 3, 5, 7, 9],
+                                amplitudes: [1.0, 1/3, 1/5, 1/7, 1/9]
+                            };
+                        case 'triangle':
+                            return {
+                                harmonics: [1, 3, 5, 7],
+                                amplitudes: [1.0, 1/9, 1/25, 1/49]
+                            };
+                        default:
+                            return {
+                                harmonics: [1],
+                                amplitudes: [1.0]
+                            };
+                    }
+                }
+                
+                // 更新谐波信息显示
+                function updateHarmonicInfo() {
+                    const maxFreq = getMaxFrequency();
+                    const harmonicInfo = getHarmonicInfo();
+                    
+                    // 更新控制面板中的谐波信息
+                    document.getElementById('sine-harmonics').style.display = signalType === 'sine' ? 'block' : 'none';
+                    document.getElementById('square-harmonics').style.display = signalType === 'square' ? 'block' : 'none';
+                    document.getElementById('triangle-harmonics').style.display = signalType === 'triangle' ? 'block' : 'none';
+                    
+                    // 更新频率显示
+                    document.querySelector('#sine-harmonics .parameter-display').textContent = signalFreq;
+                    document.querySelector('#square-harmonics .parameter-display').textContent = maxFreq;
+                    document.querySelector('#triangle-harmonics .parameter-display').textContent = maxFreq;
+                    
+                    // 更新原始频谱图中的谐波详情
+                    const harmonicDetails = document.getElementById('original-harmonic-details');
+                    let detailsHTML = '';
+                    
+                    if (signalType === 'sine') {
+                        detailsHTML = `正弦波: 仅包含基波频率 ${signalFreq} Hz`;
+                    } else {
+                        detailsHTML = `${signalType === 'square' ? '方波' : '三角波'}: 包含谐波频率: `;
+                        harmonicInfo.harmonics.forEach((harmonic, index) => {
+                            const freq = harmonic * signalFreq;
+                            const amp = harmonicInfo.amplitudes[index].toFixed(3);
+                            detailsHTML += `${freq} Hz (${amp})`;
+                            if (index < harmonicInfo.harmonics.length - 1) {
+                                detailsHTML += ', ';
+                            }
+                        });
+                        detailsHTML += ` - 最高频率: ${maxFreq} Hz`;
+                    }
+                    
+                    harmonicDetails.innerHTML = detailsHTML;
+                }
+                
+                // DOM元素引用
+                const signalFreqSlider = document.getElementById('signal-freq');
+                const signalFreqVal = document.getElementById('signal-freq-val');
+                const sampleFreqSlider = document.getElementById('sample-freq');
+                const sampleFreqVal = document.getElementById('sample-freq-val');
+                const freqRatio = document.getElementById('freq-ratio');
+                const statusIndicator = document.getElementById('status-indicator');
+                const statusText = document.getElementById('status-text');
+                const origFreqDisplay = document.getElementById('orig-freq-display');
+                const origMaxFreqDisplay = document.getElementById('orig-max-freq-display');
+                const sampFreqDisplay = document.getElementById('samp-freq-display');
+                const origPeakDisplay = document.getElementById('orig-peak-display');
+                const nyquistDisplay = document.getElementById('nyquist-display');
+                
+                // 生成信号
+                function generateSignal(t) {
+                    try {
+                        switch(signalType) {
+                            case 'sine':
+                                return Math.sin(2 * Math.PI * signalFreq * t);
+                            case 'square':
+                                // 方波实现（有限次谐波近似）
+                                let squareValue = 0;
+                                const squareHarmonics = [1, 3, 5, 7, 9];
+                                for (let i = 0; i < squareHarmonics.length; i++) {
+                                    const n = squareHarmonics[i];
+                                    squareValue += Math.sin(2 * Math.PI * n * signalFreq * t) / n;
+                                }
+                                return squareValue * (4 / Math.PI);
+                            case 'triangle':
+                                // 三角波实现（有限次谐波近似）
+                                let triangleValue = 0;
+                                const triangleHarmonics = [1, 3, 5, 7];
+                                for (let i = 0; i < triangleHarmonics.length; i++) {
+                                    const n = triangleHarmonics[i];
+                                    triangleValue += Math.sin(2 * Math.PI * n * signalFreq * t) / (n * n) * (n % 4 === 1 ? 1 : -1);
+                                }
+                                return triangleValue * (8 / (Math.PI * Math.PI));
+                            default:
+                                return Math.sin(2 * Math.PI * signalFreq * t);
+                        }
+                    } catch (error) {
+                        handleError(`生成信号失败: ${error.message}`);
+                        return 0;
+                    }
+                }
+                
+                // 生成采样点
+                function getSamples(duration) {
+                    try {
+                        const samples = [];
+                        const sampleInterval = 1 / sampleFreq;
+                        const steps = Math.ceil(duration / sampleInterval);
+                        
+                        for (let i = 0; i <= steps; i++) {
+                            const t = i * sampleInterval;
+                            samples.push({
+                                x: t,
+                                y: generateSignal(t + time)
+                            });
+                        }
+                        
+                        return samples;
+                    } catch (error) {
+                        handleError(`生成采样点失败: ${error.message}`);
+                        return [];
+                    }
+                }
+                
+                // 重建信号 (sinc插值)
+                function reconstructSignal(t, samples) {
+                    try {
+                        const sampleInterval = 1 / sampleFreq;
+                        let value = 0;
+                        const pi = Math.PI;
+                        
+                        for (let i = 0; i < samples.length; i++) {
+                            const sample = samples[i];
+                            const dt = t - sample.x;
+                            if (Math.abs(dt) < 1e-10) {
+                                value = sample.y;
+                            } else {
+                                // sinc函数: sin(πx)/(πx)
+                                const sincArg = pi * dt * sampleFreq;
+                                value += sample.y * Math.sin(sincArg) / sincArg;
+                            }
+                        }
+                        
+                        return value;
+                    } catch (error) {
+                        handleError(`重建信号失败: ${error.message}`);
+                        return 0;
+                    }
+                }
+                
+                // 计算信号频谱 - 完整显示所有谐波
+                function calculateSpectrum() {
+                    try {
+                        const frequencies = [];
+                        const magnitudes = [];
+                        const maxDisplayFreq = 60; // 显示到60Hz以包含所有谐波
+                        const harmonicInfo = getHarmonicInfo();
+                        
+                        // 对于基本信号，我们可以直接计算主要频率分量
+                        if (signalType === 'sine') {
+                            // 正弦波只有一个频率分量
+                            for (let f = 0.5; f <= maxDisplayFreq; f += 0.5) {
+                                frequencies.push(f);
+                                magnitudes.push(Math.abs(f - signalFreq) < 0.3 ? 1 : 0);
+                            }
+                        } else {
+                            // 方波和三角波有多个谐波分量
+                            for (let f = 0.5; f <= maxDisplayFreq; f += 0.5) {
+                                let magnitude = 0;
+                                
+                                // 检查是否为谐波频率
+                                for (let i = 0; i < harmonicInfo.harmonics.length; i++) {
+                                    const harmonicFreq = harmonicInfo.harmonics[i] * signalFreq;
+                                    if (Math.abs(f - harmonicFreq) < 0.3) {
+                                        magnitude = harmonicInfo.amplitudes[i];
+                                        break;
+                                    }
+                                }
+                                
+                                frequencies.push(f);
+                                magnitudes.push(magnitude);
+                            }
+                        }
+                        
+                        return { frequencies, magnitudes };
+                    } catch (error) {
+                        handleError(`计算频谱失败: ${error.message}`);
+                        return { frequencies: [], magnitudes: [] };
+                    }
+                }
+                
+                // 计算采样后信号的完整周期频谱 - 明确展示周期延拓
+                function calculateSampledSpectrumWithCycles() {
+                    try {
+                        // 获取原始频谱
+                        const originalSpectrum = calculateSpectrum();
+                        
+                        // 我们要显示的周期范围 (-3 到 3)
+                        const cycles = [-3, -2, -1, 0, 1, 2, 3];
+                        const cycleSpectrums = [];
+                        const nyquist = sampleFreq / 2;
+                        const maxDisplayFreq = 60;
+                        
+                        // 为每个周期计算频谱 - 明确展示周期延拓
+                        cycles.forEach(cycle => {
+                            const centerFreq = cycle * sampleFreq;
+                            const frequencies = [];
+                            const magnitudes = [];
+                            
+                            // 计算当前周期内的频率范围
+                            const startFreq = Math.max(0, centerFreq - sampleFreq / 2);
+                            const endFreq = Math.min(maxDisplayFreq, centerFreq + sampleFreq / 2);
+                            
+                            // 为当前周期计算频谱 - 直接延拓原始频谱
+                            for (let f = startFreq; f <= endFreq; f += 0.5) {
+                                let magnitude = 0;
+                                
+                                // 计算相对于中心频率的偏移
+                                const offsetFreq = f - centerFreq;
+                                
+                                // 在原始频谱中查找对应频率的幅度
+                                for (let i = 0; i < originalSpectrum.frequencies.length; i++) {
+                                    const origFreq = originalSpectrum.frequencies[i];
+                                    if (Math.abs(offsetFreq - origFreq) < 0.3) {
+                                        magnitude = originalSpectrum.magnitudes[i];
+                                        break;
+                                    }
+                                }
+                                
+                                frequencies.push(f);
+                                magnitudes.push(magnitude);
+                            }
+                            
+                            cycleSpectrums.push({
+                                cycle,
+                                centerFreq,
+                                frequencies,
+                                magnitudes
+                            });
+                        });
+                        
+                        return { cycleSpectrums, nyquist };
+                    } catch (error) {
+                        handleError(`计算采样频谱失败: ${error.message}`);
+                        return { cycleSpectrums: [], nyquist: 0 };
+                    }
+                }
+                
+                // 绘制坐标轴
+                function drawAxis(ctx, width, height, isSpectrum = false, extendedRange = false) {
+                    try {
+                        const padding = 30;
+                        const centerY = isSpectrum ? height - padding : height / 2;
+                        
+                        // 清空画布
+                        ctx.clearRect(0, 0, width, height);
+                        
+                        // 绘制背景网格
+                        ctx.beginPath();
+                        ctx.strokeStyle = '#f0f0f0';
+                        ctx.lineWidth = 1;
+                        
+                        // 水平网格线
+                        const hGrid = 5;
+                        for (let i = 0; i <= hGrid; i++) {
+                            const y = padding + (height - 2 * padding) * (i / hGrid);
+                            ctx.moveTo(padding, y);
+                            ctx.lineTo(width - padding, y);
+                        }
+                        
+                        // 垂直网格线
+                        const vGrid = 6;
+                        for (let i = 0; i <= vGrid; i++) {
+                            const x = padding + (width - 2 * padding) * (i / vGrid);
+                            ctx.moveTo(x, padding);
+                            ctx.lineTo(x, height - padding);
+                        }
+                        ctx.stroke();
+                        
+                        // 绘制坐标轴
+                        ctx.beginPath();
+                        ctx.strokeStyle = '#999';
+                        ctx.lineWidth = 1.5;
+                        
+                        // X轴
+                        ctx.moveTo(padding, centerY);
+                        ctx.lineTo(width - padding, centerY);
+                        
+                        // Y轴
+                        ctx.moveTo(padding, padding);
+                        ctx.lineTo(padding, height - padding);
+                        ctx.stroke();
+                        
+                        // 绘制刻度和标签
+                        ctx.fillStyle = '#666';
+                        ctx.font = '10px Arial';
+                        ctx.textAlign = 'center';
+                        
+                        // X轴刻度
+                        const xTicks = 6;
+                        const xStep = (width - 2 * padding) / xTicks;
+                        // 扩展频谱范围以显示更多周期
+                        const xMax = isSpectrum && extendedRange ? 60 : (isSpectrum ? 60 : 2);
+                        const xUnit = isSpectrum ? 'Hz' : 's';
+                        
+                        for (let i = 0; i <= xTicks; i++) {
+                            const x = padding + i * xStep;
+                            const value = (i * xMax / xTicks).toFixed(1);
+                            
+                            ctx.beginPath();
+                            ctx.moveTo(x, centerY - 4);
+                            ctx.lineTo(x, centerY + 4);
+                            ctx.stroke();
+                            
+                            ctx.fillText(value + xUnit, x, centerY + 15);
+                        }
+                        
+                        // Y轴刻度
+                        ctx.textAlign = 'right';
+                        const yTicks = 4;
+                        const yStep = (height - 2 * padding) / yTicks;
+                        const yMax = 1;
+                        
+                        for (let i = 0; i <= yTicks; i++) {
+                            let y, value;
+                            
+                            if (isSpectrum) {
+                                y = height - padding - i * yStep;
+                                value = (i * yMax / yTicks).toFixed(1);
+                            } else {
+                                y = padding + i * yStep;
+                                value = (yMax - i * 2 * yMax / yTicks).toFixed(1);
+                            }
+                            
+                            ctx.beginPath();
+                            ctx.moveTo(padding - 4, y);
+                            ctx.lineTo(padding + 4, y);
+                            ctx.stroke();
+                            
+                            ctx.fillText(value, padding - 6, y + 3);
+                        }
+                    } catch (error) {
+                        handleError(`绘制坐标轴失败: ${error.message}`);
+                    }
+                }
+                
+                // 绘制原始信号
+                function drawOriginalSignal() {
+                    try {
+                        const width = originalCanvas.clientWidth;
+                        const height = originalCanvas.clientHeight;
+                        const padding = 30;
+                        const duration = 2; // 显示2秒的信号
+                        const scaleX = (width - 2 * padding) / duration;
+                        const scaleY = (height - 2 * padding) / 2 * 0.8;
+                        const centerY = height / 2;
+                        
+                        // 绘制坐标轴
+                        drawAxis(ctxOrig, width, height);
+                        
+                        // 绘制信号
+                        ctxOrig.beginPath();
+                        ctxOrig.strokeStyle = '#10b981'; // 绿色
+                        ctxOrig.lineWidth = 2;
+                        
+                        for (let x = padding; x < width - padding; x++) {
+                            const t = (x - padding) / scaleX;
+                            const signalValue = generateSignal(t + time);
+                            const y = centerY - signalValue * scaleY;
+                            
+                            if (x === padding) {
+                                ctxOrig.moveTo(x, y);
+                            } else {
+                                ctxOrig.lineTo(x, y);
+                            }
+                        }
+                        ctxOrig.stroke();
+                        
+                        // 更新显示值
+                        origFreqDisplay.textContent = signalFreq;
+                        origMaxFreqDisplay.textContent = getMaxFrequency().toFixed(1);
+                        origPeakDisplay.textContent = signalFreq;
+                    } catch (error) {
+                        handleError(`绘制原始信号失败: ${error.message}`);
+                    }
+                }
+                
+                // 绘制采样信号
+                function drawSampledSignal() {
+                    try {
+                        const width = sampledCanvas.clientWidth;
+                        const height = sampledCanvas.clientHeight;
+                        const padding = 30;
+                        const duration = 2;
+                        const scaleX = (width - 2 * padding) / duration;
+                        const scaleY = (height - 2 * padding) / 2 * 0.8;
+                        const centerY = height / 2;
+                        
+                        // 绘制坐标轴
+                        drawAxis(ctxSamp, width, height);
+                        
+                        // 绘制原始信号（淡色参考）
+                        ctxSamp.beginPath();
+                        ctxSamp.strokeStyle = 'rgba(16, 185, 129, 0.3)'; // 淡绿色
+                        ctxSamp.lineWidth = 1.5;
+                        
+                        for (let x = padding; x < width - padding; x++) {
+                            const t = (x - padding) / scaleX;
+                            const signalValue = generateSignal(t + time);
+                            const y = centerY - signalValue * scaleY;
+                            
+                            if (x === padding) {
+                                ctxSamp.moveTo(x, y);
+                            } else {
+                                ctxSamp.lineTo(x, y);
+                            }
+                        }
+                        ctxSamp.stroke();
+                        
+                        // 绘制采样点
+                        const samples = getSamples(duration);
+                        ctxSamp.fillStyle = '#ef4444'; // 红色
+                        ctxSamp.strokeStyle = 'white';
+                        ctxSamp.lineWidth = 1;
+                        
+                        samples.forEach(sample => {
+                            const x = padding + sample.x * scaleX;
+                            const y = centerY - sample.y * scaleY;
+                            
+                            if (x >= padding && x <= width - padding) {
+                                ctxSamp.beginPath();
+                                ctxSamp.arc(x, y, 5, 0, Math.PI * 2);
+                                ctxSamp.fill();
+                                ctxSamp.stroke();
+                            }
+                        });
+                        
+                        // 更新显示值
+                        sampFreqDisplay.textContent = sampleFreq;
+                    } catch (error) {
+                        handleError(`绘制采样信号失败: ${error.message}`);
+                    }
+                }
+                
+                // 绘制原始信号频谱 - 完整显示所有谐波
+                function drawOriginalSpectrum() {
+                    try {
+                        const width = originalSpectrumCanvas.clientWidth;
+                        const height = originalSpectrumCanvas.clientHeight;
+                        const padding = 30;
+                        const maxFreq = 60; // 扩展到60Hz以显示所有谐波
+                        const scaleX = (width - 2 * padding) / maxFreq;
+                        const scaleY = (height - 2 * padding) * 0.9;
+                        
+                        // 绘制坐标轴 - 使用扩展范围
+                        drawAxis(ctxOrigSpec, width, height, true, true);
+                        
+                        // 计算频谱
+                        const spectrum = calculateSpectrum();
+                        
+                        // 绘制频谱
+                        ctxOrigSpec.fillStyle = 'rgba(139, 92, 246, 0.7)'; // 紫色
+                        
+                        for (let i = 0; i < spectrum.frequencies.length; i++) {
+                            const f = spectrum.frequencies[i];
+                            const mag = spectrum.magnitudes[i];
+                            
+                            if (f > 0 && f <= maxFreq && mag > 0) {
+                                const x = padding + f * scaleX;
+                                const barWidth = scaleX * 0.8;
+                                const barHeight = mag * scaleY;
+                                
+                                ctxOrigSpec.fillRect(
+                                    x - barWidth / 2,
+                                    height - padding - barHeight,
+                                    barWidth,
+                                    barHeight
+                                );
+                                
+                                // 标记谐波频率
+                                if (mag > 0.1) {
+                                    ctxOrigSpec.fillStyle = '#000';
+                                    ctxOrigSpec.font = '9px Arial';
+                                    ctxOrigSpec.textAlign = 'center';
+                                    ctxOrigSpec.fillText(
+                                        f.toFixed(1), 
+                                        x, 
+                                        height - padding - barHeight - 5
+                                    );
+                                    ctxOrigSpec.fillStyle = 'rgba(139, 92, 246, 0.7)';
+                                }
+                            }
+                        }
+                    } catch (error) {
+                        handleError(`绘制原始信号频谱失败: ${error.message}`);
+                    }
+                }
+                
+                // 绘制采样信号的完整周期频谱，不同周期用不同颜色
+                function drawSampledSpectrum() {
+                    try {
+                        const width = sampledSpectrumCanvas.clientWidth;
+                        const height = sampledSpectrumCanvas.clientHeight;
+                        const padding = 30;
+                        const maxFreq = 60; // 扩展频率范围以显示更多周期
+                        const scaleX = (width - 2 * padding) / maxFreq;
+                        const scaleY = (height - 2 * padding) * 0.9;
+                        
+                        // 绘制坐标轴，使用扩展范围
+                        drawAxis(ctxSampSpec, width, height, true, true);
+                        
+                        // 获取完整的周期频谱数据
+                        const { cycleSpectrums, nyquist } = calculateSampledSpectrumWithCycles();
+                        
+                        // 绘制每个周期的频谱，使用不同颜色 - 明确展示周期延拓
+                        cycleSpectrums.forEach((spectrum, index) => {
+                            const color = cycleColors[index % cycleColors.length];
+                            ctxSampSpec.fillStyle = color;
+                            
+                            // 绘制当前周期的频谱边界线
+                            ctxSampSpec.beginPath();
+                            ctxSampSpec.strokeStyle = `${color}40`; // 半透明
+                            ctxSampSpec.lineWidth = 1;
+                            const startX = padding + (spectrum.centerFreq - sampleFreq / 2) * scaleX;
+                            const endX = padding + (spectrum.centerFreq + sampleFreq / 2) * scaleX;
+                            
+                            // 绘制周期边界
+                            ctxSampSpec.moveTo(startX, padding);
+                            ctxSampSpec.lineTo(startX, height - padding);
+                            ctxSampSpec.moveTo(endX, padding);
+                            ctxSampSpec.lineTo(endX, height - padding);
+                            ctxSampSpec.stroke();
+                            
+                            // 绘制频谱柱形
+                            for (let i = 0; i < spectrum.frequencies.length; i++) {
+                                const f = spectrum.frequencies[i];
+                                const mag = spectrum.magnitudes[i];
+                                
+                                if (f > 0 && f <= maxFreq && mag > 0) {
+                                    const x = padding + f * scaleX;
+                                    const barWidth = scaleX * 0.8;
+                                    const barHeight = mag * scaleY;
+                                    
+                                    ctxSampSpec.fillRect(
+                                        x - barWidth / 2,
+                                        height - padding - barHeight,
+                                        barWidth,
+                                        barHeight
+                                    );
+                                }
+                            }
+                            
+                            // 标记周期中心
+                            const centerX = padding + spectrum.centerFreq * scaleX;
+                            ctxSampSpec.beginPath();
+                            ctxSampSpec.strokeStyle = color;
+                            ctxSampSpec.lineWidth = 1;
+                            ctxSampSpec.setLineDash([2, 2]);
+                            ctxSampSpec.moveTo(centerX, padding);
+                            ctxSampSpec.lineTo(centerX, height - padding);
+                            ctxSampSpec.stroke();
+                            ctxSampSpec.setLineDash([]);
+                            
+                            // 标记周期编号
+                            ctxSampSpec.fillStyle = color;
+                            ctxSampSpec.font = '10px Arial';
+                            ctxSampSpec.textAlign = 'center';
+                            ctxSampSpec.fillText(
+                                `周期 ${spectrum.cycle}`, 
+                                centerX, 
+                                padding + 12
+                            );
+                        });
+                        
+                        // 绘制多个奈奎斯特频率线（每个周期一条）
+                        cycleSpectrums.forEach(spectrum => {
+                            const nyquistPositions = [
+                                spectrum.centerFreq - nyquist,
+                                spectrum.centerFreq + nyquist
+                            ];
+                            
+                            nyquistPositions.forEach(pos => {
+                                if (pos > 0 && pos <= maxFreq) {
+                                    const nyquistX = padding + pos * scaleX;
+                                    ctxSampSpec.beginPath();
+                                    ctxSampSpec.strokeStyle = '#f59e0b80'; // 半透明黄色
+                                    ctxSampSpec.lineWidth = 2;
+                                    ctxSampSpec.setLineDash([5, 5]);
+                                    ctxSampSpec.moveTo(nyquistX, padding);
+                                    ctxSampSpec.lineTo(nyquistX, height - padding);
+                                    ctxSampSpec.stroke();
+                                }
+                            });
+                        });
+                        
+                        ctxSampSpec.setLineDash([]);
+                        
+                        // 更新奈奎斯特频率显示
+                        nyquistDisplay.textContent = nyquist.toFixed(1);
+                    } catch (error) {
+                        handleError(`绘制采样信号频谱失败: ${error.message}`);
+                    }
+                }
+                
+                // 绘制重建信号
+                function drawReconstructedSignal() {
+                    try {
+                        const width = reconstructedCanvas.clientWidth;
+                        const height = reconstructedCanvas.clientHeight;
+                        const padding = 30;
+                        const duration = 2;
+                        const scaleX = (width - 2 * padding) / duration;
+                        const scaleY = (height - 2 * padding) / 2 * 0.8;
+                        const centerY = height / 2;
+                        
+                        // 绘制坐标轴
+                        drawAxis(ctxRecon, width, height);
+                        
+                        // 绘制原始信号（虚线参考）
+                        ctxRecon.beginPath();
+                        ctxRecon.strokeStyle = 'rgba(16, 185, 129, 0.7)'; // 绿色
+                        ctxRecon.lineWidth = 2;
+                        ctxRecon.setLineDash([5, 5]);
+                        
+                        for (let x = padding; x < width - padding; x++) {
+                            const t = (x - padding) / scaleX;
+                            const signalValue = generateSignal(t + time);
+                            const y = centerY - signalValue * scaleY;
+                            
+                            if (x === padding) {
+                                ctxRecon.moveTo(x, y);
+                            } else {
+                                ctxRecon.lineTo(x, y);
+                            }
+                        }
+                        ctxRecon.stroke();
+                        ctxRecon.setLineDash([]);
+                        
+                        // 获取采样点
+                        const samples = getSamples(duration);
+                        
+                        // 绘制重建信号
+                        ctxRecon.beginPath();
+                        ctxRecon.strokeStyle = '#3b82f6'; // 蓝色
+                        ctxRecon.lineWidth = 2.5;
+                        
+                        for (let x = padding; x < width - padding; x++) {
+                            const t = (x - padding) / scaleX;
+                            const signalValue = reconstructSignal(t, samples);
+                            const y = centerY - signalValue * scaleY;
+                            
+                            if (x === padding) {
+                                ctxRecon.moveTo(x, y);
+                            } else {
+                                ctxRecon.lineTo(x, y);
+                            }
+                        }
+                        ctxRecon.stroke();
+                        
+                        // 绘制采样点
+                        ctxRecon.fillStyle = '#ef4444'; // 红色
+                        ctxRecon.strokeStyle = 'white';
+                        ctxRecon.lineWidth = 1;
+                        
+                        samples.forEach(sample => {
+                            const x = padding + sample.x * scaleX;
+                            const y = centerY - sample.y * scaleY;
+                            
+                            if (x >= padding && x <= width - padding) {
+                                ctxRecon.beginPath();
+                                ctxRecon.arc(x, y, 5, 0, Math.PI * 2);
+                                ctxRecon.fill();
+                                ctxRecon.stroke();
+                            }
+                        });
+                    } catch (error) {
+                        handleError(`绘制重建信号失败: ${error.message}`);
+                    }
+                }
+                
+                // 更新状态信息
+                function updateStatus() {
+                    try {
+                        const maxFreq = getMaxFrequency();
+                        const ratio = sampleFreq / maxFreq;
+                        freqRatio.textContent = ratio.toFixed(1) + '×';
+                        
+                        // 更新状态指示器
+                        if (ratio >= 2.0) {
+                            statusText.innerHTML = `${ratio.toFixed(1)}× - 满足奈奎斯特条件 (采样频率 > 2×信号最高频率)`;
+                            statusIndicator.className = 'w-3 h-3 rounded-full bg-green-500 mr-2 pulse';
+                        } else if (ratio >= 1.5) {
+                            statusText.innerHTML = `${ratio.toFixed(1)}× - 接近临界值 (可能产生轻微失真)`;
+                            statusIndicator.className = 'w-3 h-3 rounded-full bg-yellow-500 mr-2 pulse';
+                        } else {
+                            statusText.innerHTML = `${ratio.toFixed(1)}× - 混叠现象明显 (采样频率 < 2×信号最高频率)`;
+                            statusIndicator.className = 'w-3 h-3 rounded-full bg-red-500 mr-2 pulse';
+                        }
+                    } catch (error) {
+                        handleError(`更新状态失败: ${error.message}`);
+                    }
+                }
+                
+                // 绘制所有画布
+                function drawAll() {
+                    drawOriginalSignal();
+                    drawSampledSignal();
+                    drawOriginalSpectrum();
+                    drawSampledSpectrum();
+                    drawReconstructedSignal();
+                    updateStatus();
+                    updateHarmonicInfo();
+                }
+                
+                // 动画循环
+                function animate(timestamp) {
+                    try {
+                        if (isPlaying) {
+                            time += 0.015; // 时间增量，控制动画速度
+                            drawAll();
+                        }
+                        animationId = requestAnimationFrame(animate);
+                    } catch (error) {
+                        handleError(`动画循环失败: ${error.message}`);
+                    }
+                }
+                
+                // 事件监听 - 信号类型切换
+                document.getElementById('sine-btn').addEventListener('click', () => {
+                    signalType = 'sine';
+                    updateSignalButtons();
+                    drawAll();
+                });
+                
+                document.getElementById('square-btn').addEventListener('click', () => {
+                    signalType = 'square';
+                    updateSignalButtons();
+                    drawAll();
+                });
+                
+                document.getElementById('triangle-btn').addEventListener('click', () => {
+                    signalType = 'triangle';
+                    updateSignalButtons();
+                    drawAll();
+                });
+                
+                // 更新信号按钮状态
+                function updateSignalButtons() {
+                    // 重置所有按钮样式
+                    document.querySelectorAll('#sine-btn, #square-btn, #triangle-btn').forEach(btn => {
+                        btn.className = 'px-3 py-2 bg-gray-200 text-gray-700 rounded-md text-sm font-medium transition-all hover:bg-gray-300';
+                    });
+                    
+                    // 设置当前按钮样式
+                    document.getElementById(`${signalType}-btn`).className = 
+                        'px-3 py-2 bg-blue-600 text-white rounded-md text-sm font-medium transition-all hover:bg-blue-700';
+                }
+                
+                // 动画控制
+                document.getElementById('play-btn').addEventListener('click', () => {
+                    isPlaying = true;
+                });
+                
+                document.getElementById('pause-btn').addEventListener('click', () => {
+                    isPlaying = false;
+                });
+                
+                document.getElementById('reset-btn').addEventListener('click', () => {
+                    time = 0;
+                    signalFreq = 5;
+                    sampleFreq = 15;
+                    signalFreqSlider.value = 5;
+                    sampleFreqSlider.value = 15;
+                    signalFreqVal.textContent = 5;
+                    sampleFreqVal.textContent = 15;
+                    signalType = 'sine';
+                    updateSignalButtons();
+                    isPlaying = true;
+                    drawAll();
+                });
+                
+                // 信号频率调节
+                signalFreqSlider.addEventListener('input', (e) => {
+                    signalFreq = parseFloat(e.target.value);
+                    signalFreqVal.textContent = signalFreq;
+                    drawAll();
+                });
+                
+                // 采样频率调节
+                sampleFreqSlider.addEventListener('input', (e) => {
+                    sampleFreq = parseFloat(e.target.value);
+                    sampleFreqVal.textContent = sampleFreq;
+                    drawAll();
+                });
+                
+                // 初始化绘制
+                updateHarmonicInfo();
+                drawAll();
+                
+                // 启动动画
+                animationId = requestAnimationFrame(animate);
+                
+                // 清理函数
+                window.addEventListener('beforeunload', () => {
+                    if (animationId) {
+                        cancelAnimationFrame(animationId);
+                    }
+                });
+                
+            } catch (error) {
+                handleError(`初始化失败: ${error.message}`);
+            }
+        });
+    </script>
+</body>
+</html>
