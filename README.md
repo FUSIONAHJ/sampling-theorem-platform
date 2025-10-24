@@ -15,4 +15,4 @@
 2. 调整信号频率和采样频率
 3. 观察频谱变化和重建效果
 
-访问地址：
+访问地址： https://fusionahj.github.io/sampling-theorem-platform/
